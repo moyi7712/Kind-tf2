@@ -1,12 +1,12 @@
 import tensorflow as tf
 import json
+import numpy as np
 import random, os
 
 
 class PipeLine(object):
     def __init__(self, config, batch_size=None):
         self.config = config
-        self.batch_size = batch_size if batch_size else config.batch_size
 
         with open(config.filelist, 'r') as f:
             self.filelist = json.load(f)
@@ -28,46 +28,53 @@ class PipeLine(object):
         image = (image - img_min) / tf.maximum((img_max - img_min), 0.001)
         return image
 
+    def uniform_int(self, maxval):
+
+        return tf.random.uniform(shape=(1,), maxval=maxval, dtype=tf.int32)[0]
+
+    @tf.function
     def _prosecc_train_Decom(self, name_input, name_lable):
         input = self._imread(name_input)
         lable = self._imread(name_lable)
-        shape = tf.shape(input)
-        random_x = random.randint(0, shape[0] - self.config.patch_size_Decom)
-        random_y = random.randint(0, shape[1] - self.config.patch_size_Decom)
+        shape = tf.cast(tf.shape(input), dtype=tf.int32)
 
-        input = input[random_x:random_x + self.config.patch_size_Decom,
-                random_y:random_y + self.config.patch_size_Decom, :]
-        lable = lable[random_x:random_x + self.config.patch_size_Decom,
-                random_y:random_y + self.config.patch_size_Decom, :]
-        k = random.randint(0, 3)
-        is_flip = random.randint(0, 1)
+        patch_size = self.config.patch_size_Decom
+        random_x = self.uniform_int(shape[0] - patch_size)
+        random_y = self.uniform_int(shape[1] - patch_size)
+
+        input = input[random_x:random_x + patch_size, random_y:random_y + patch_size, :]
+        lable = lable[random_x:random_x + patch_size, random_y:random_y + patch_size, :]
+        k = self.uniform_int(3)
+        is_flip = self.uniform_int(1)
         input = tf.image.rot90(input, k)
         lable = tf.image.rot90(lable, k)
-        if is_flip:
+        if is_flip == tf.constant(0):
             input = tf.image.flip_left_right(input)
             lable = tf.image.flip_left_right(lable)
         return input, lable
 
+    @tf.function
     def _prosecc_train_Restor(self, name_input, name_lable):
         input = self._imread(name_input)
         lable = self._imread(name_lable)
-        shape = tf.shape(input)
-        random_x = random.randint(0, shape[0] - self.config.patch_size_Restor)
-        random_y = random.randint(0, shape[1] - self.config.patch_size_Restor)
+        shape = tf.cast(tf.shape(input), dtype=tf.int32)
 
-        input = input[random_x:random_x + self.config.patch_size_Restor,
-                random_y:random_y + self.config.patch_size_Restor, :]
-        lable = lable[random_x:random_x + self.config.patch_size_Restor,
-                random_y:random_y + self.config.patch_size_Restor, :]
-        k = random.randint(0, 3)
-        is_flip = random.randint(0, 1)
+        patch_size = self.config.patch_size_Restor
+        random_x = self.uniform_int(shape[0] - patch_size)
+        random_y = self.uniform_int(shape[1] - patch_size)
+
+        input = input[random_x:random_x + patch_size, random_y:random_y + patch_size, :]
+        lable = lable[random_x:random_x + patch_size, random_y:random_y + patch_size, :]
+        k = self.uniform_int(3)
+        is_flip = self.uniform_int(1)
         input = tf.image.rot90(input, k)
         lable = tf.image.rot90(lable, k)
-        if is_flip:
+        if is_flip == tf.constant(0):
             input = tf.image.flip_left_right(input)
             lable = tf.image.flip_left_right(lable)
         return input, lable
 
+    @tf.function
     def _prosecc_train_Adjust(self, name_input, name_lable):
         input = self._imread(name_input)
         lable = self._imread(name_lable)
@@ -88,6 +95,7 @@ class PipeLine(object):
             lable = tf.image.flip_left_right(lable)
         return input, lable
 
+    @tf.function
     def _process_test(self, name_input, name_lable):
         input = self._imread(name_input)
         lable = self._imread(name_lable)
@@ -97,19 +105,20 @@ class PipeLine(object):
         lable = tf.image.resize(lable, shape, method=tf.image.ResizeMethod.GAUSSIAN)
         return input, lable
 
-    def Train(self, flage):
+    def Train(self, flage, num):
         assert flage in ['Decom', 'Restor', 'Adjust']
         dataset = tf.data.Dataset.from_tensor_slices((self.train_inputs_list, self.train_lables_list)).shuffle(
             self.config.shuffle, reshuffle_each_iteration=True)
         if flage == 'Decom':
+            pass
             dataset = dataset.map(self._prosecc_train_Decom, num_parallel_calls=self.config.num_parallel_calls).batch(
-                self.config.batch_size_Decom)
+                self.config.batch_size_Decom*num, drop_remainder=True)
         elif flage == 'Restor':
             dataset = dataset.map(self._prosecc_train_Restor, num_parallel_calls=self.config.num_parallel_calls).batch(
-                self.config.batch_size_Restor)
+                self.config.batch_size_Restor*num, drop_remainder=True)
         elif flage == 'Adjust':
             dataset = dataset.map(self._prosecc_train_Adjust, num_parallel_calls=self.config.num_parallel_calls).batch(
-                self.config.batch_size_Adjust)
+                self.config.batch_size_Adjust*num, drop_remainder=True)
         dataset = dataset.prefetch(buffer_size=self.config.buffer_size)
 
         return dataset

@@ -11,7 +11,7 @@ def gradient(input_tensor, direction):
     gradient_orig = tf.abs(tf.nn.conv2d(input_tensor, kernel, strides=[1, 1, 1, 1], padding='SAME'))
     grad_min = tf.reduce_min(gradient_orig)
     grad_max = tf.reduce_max(gradient_orig)
-    grad_norm = tf.compat.v1.div((gradient_orig - grad_min), (grad_max - grad_min + 0.0001))
+    grad_norm = tf.divide((gradient_orig - grad_min), (grad_max - grad_min + 0.0001))
 
     return grad_norm
 
@@ -31,10 +31,10 @@ def mutual_i_input_loss(input_I_low, input_im):
     input_gray = tf.image.rgb_to_grayscale(input_im)
     low_gradient_x = gradient(input_I_low, "x")
     input_gradient_x = gradient(input_gray, "x")
-    x_loss = tf.abs(tf.compat.v1.div(low_gradient_x, tf.maximum(input_gradient_x, 0.01)))
+    x_loss = tf.abs(tf.divide(low_gradient_x, tf.maximum(input_gradient_x, 0.01)))
     low_gradient_y = gradient(input_I_low, "y")
     input_gradient_y = gradient(input_gray, "y")
-    y_loss = tf.abs(tf.compat.v1.div(low_gradient_y, tf.maximum(input_gradient_y, 0.01)))
+    y_loss = tf.abs(tf.divide(low_gradient_y, tf.maximum(input_gradient_y, 0.01)))
     mut_loss = tf.reduce_mean(x_loss + y_loss)
     return mut_loss
 
@@ -74,7 +74,7 @@ def _tf_fspecial_gauss(size, sigma):
     """Function to mimic the 'fspecial' gaussian MATLAB function
     """
     line = tf.range(-size // 2 + 1, size // 2 + 1, delta=1)
-    y_data, x_data = tf.meshgrid[line, line]
+    y_data, x_data = tf.meshgrid(line, line)
 
     x_data = tf.expand_dims(x_data, axis=-1)
     x_data = tf.expand_dims(x_data, axis=-1)
