@@ -41,7 +41,7 @@ class Train_Decom(Train):
             checkpoint.restore(self.ckpt_manager.latest_checkpoint)
 
     def lr_schedul(self, epoch):
-        if epoch > 1000:
+        if epoch > 50:
             return self.base_lr / 2
         else:
             return self.base_lr
@@ -109,7 +109,7 @@ class Train_Restor(Train):
         self.summary_writer = tf.summary.create_file_writer(os.path.join(config.Restor_prefix, 'summary'))
         self.ckpt_manager = tf.train.CheckpointManager(checkpoint, directory=config.Restor_prefix, max_to_keep=5)
         if self.ckpt_manager.latest_checkpoint:
-            checkpoint.restore(self.ckpt_manager.latest_checkpoint)
+            checkpoint.restore(self.ckpt_manager.latest_checkpoint).expect_partial()
         optmizer_Decom = tf.keras.optimizers.Adam(learning_rate=self.base_lr)
         checkpoint_Decom = tf.train.Checkpoint(Model=self.Decom,
                                                optmizer=optmizer_Decom)
@@ -171,11 +171,12 @@ class Train_Restor(Train):
 
 
 class Train_Adjust(Train):
-    def __init__(self, config, strategy):
+    def __init__(self, config, strategy, epoch):
         super(Train_Adjust, self).__init__(strategy=strategy,
                                            config=config)
         self.base_lr = config.Adjust_lr
         self.batch_size = config.batch_size_Adjust
+        self.epoch = epoch
         if strategy:
             self.global_batch_size = strategy.num_replicas_in_sync * self.batch_size
         self.optmizer = tf.keras.optimizers.Adam(learning_rate=self.base_lr)
@@ -184,12 +185,12 @@ class Train_Adjust(Train):
         self.summary_writer = tf.summary.create_file_writer(os.path.join(config.Adjust_prefix, 'summary'))
         self.ckpt_manager = tf.train.CheckpointManager(checkpoint, directory=config.Adjust_prefix, max_to_keep=5)
         if self.ckpt_manager.latest_checkpoint:
-            checkpoint.restore(self.ckpt_manager.latest_checkpoint)
+            checkpoint.restore(self.ckpt_manager.latest_checkpoint).expect_partial()
 
         checkpoint_Decom = tf.train.Checkpoint(Model=self.Decom)
-        ckpt_Decom_manager = tf.train.CheckpointManager(checkpoint, directory=config.Decom_prefix, max_to_keep=5)
+        ckpt_Decom_manager = tf.train.CheckpointManager(checkpoint_Decom, directory=config.Decom_prefix, max_to_keep=5)
         if ckpt_Decom_manager.latest_checkpoint:
-            checkpoint_Decom.restore(ckpt_Decom_manager.latest_checkpoint)
+            checkpoint_Decom.restore(ckpt_Decom_manager.latest_checkpoint).expect_partial()
 
     def lr_schedul(self, epoch):
         return self.base_lr
@@ -197,14 +198,13 @@ class Train_Adjust(Train):
     def average_loss(self, loss):
         return tf.nn.compute_average_loss(loss, global_batch_size=self.global_batch_size)
 
-    def train(self, inputs, labels, epoch):
-        self.epoch = epoch
+    def train(self, inputs, labels):
         with tf.GradientTape(persistent=True) as tape:
             _, illum_i = self.Decom(inputs, training=False)
             _, illum_l = self.Decom(labels, training=False)
             k = random.randint(0, 1)
             ratio = tf.reduce_mean(illum_i / (illum_l + 0.0001), axis=[1, 2, 3]) + 0.0001
-            ratio = tf.expand_dims(tf.expand_dims(ratio, axis=1), axis=2)
+            ratio = tf.expand_dims(tf.expand_dims(tf.expand_dims(ratio, axis=1), axis=2), axis=3)
 
             if k:
                 ratio = tf.divide(tf.ones_like(illum_i), ratio + 0.0001)
@@ -214,19 +214,24 @@ class Train_Adjust(Train):
                 ratio = tf.ones_like(illum_i) * ratio
                 illum_adjust = self.Adjust([illum_l, ratio], training=True)
                 loss_illum = illum_i
-            square_loss = tf.reduce_mean(tf.square(illum_adjust - loss_illum))
+            square_loss = tf.reduce_mean(tf.square(illum_adjust - loss_illum),axis=[1,2,3])
             grad_loss = Utils.grad_loss_Adjust(illum_adjust, loss_illum)
             loss_total = square_loss + grad_loss
+            # print(loss_total)
             loss_total = self.average_loss(loss_total)
-        gradient = tape.gradient(loss_total, self.Restor.trainable_variables)
-        self.optmizer.learning_rate = self.lr_schedul(epoch)
-        self.optmizer.apply_gradients(zip(gradient, self.Restor.trainable_variables))
+        gradient = tape.gradient(loss_total, self.Adjust.trainable_variables)
+        self.optmizer.apply_gradients(zip(gradient, self.Adjust.trainable_variables))
         loss_return = [square_loss, grad_loss]
-        return [self.average_loss(loss_temp) for loss_temp in loss_return].append(loss_total)
+        loss_return = [tf.reduce_mean(loss_temp) / self.global_batch_size for loss_temp in loss_return]
+        loss_return.append(loss_total)
+        return loss_return
 
     @tf.function
     def distributed_step(self, inputs, labels, epoch):
-        loss = self.strategy.experimental_run_v2(self.train, args=(inputs, labels, epoch))
+        self.epoch=epoch
+        self.optmizer.learning_rate = self.lr_schedul(epoch)
+
+        loss = self.strategy.experimental_run_v2(self.train, args=(inputs, labels))
         loss = [self.strategy2Tensor(lossTemp) for lossTemp in loss]
         loss_dict = {'square_loss': loss[0],
                      'grad_loss': loss[1],

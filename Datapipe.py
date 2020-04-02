@@ -78,19 +78,19 @@ class PipeLine(object):
     def _prosecc_train_Adjust(self, name_input, name_lable):
         input = self._imread(name_input)
         lable = self._imread(name_lable)
-        shape = tf.shape(input)
-        random_x = random.randint(0, shape[0] - self.config.patch_size_Adjust)
-        random_y = random.randint(0, shape[1] - self.config.patch_size_Adjust)
+        shape = tf.cast(tf.shape(input), dtype=tf.int32)
 
-        input = input[random_x:random_x + self.config.patch_size_Adjust,
-                random_y:random_y + self.config.patch_size_Adjust, :]
-        lable = lable[random_x:random_x + self.config.patch_size_Adjust,
-                random_y:random_y + self.config.patch_size_Adjust, :]
-        k = random.randint(0, 3)
-        is_flip = random.randint(0, 1)
+        patch_size = self.config.patch_size_Adjust
+        random_x = self.uniform_int(shape[0] - patch_size)
+        random_y = self.uniform_int(shape[1] - patch_size)
+
+        input = input[random_x:random_x + patch_size, random_y:random_y + patch_size, :]
+        lable = lable[random_x:random_x + patch_size, random_y:random_y + patch_size, :]
+        k = self.uniform_int(3)
+        is_flip = self.uniform_int(1)
         input = tf.image.rot90(input, k)
         lable = tf.image.rot90(lable, k)
-        if is_flip:
+        if is_flip == tf.constant(0):
             input = tf.image.flip_left_right(input)
             lable = tf.image.flip_left_right(lable)
         return input, lable

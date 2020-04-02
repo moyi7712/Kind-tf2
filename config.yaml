@@ -6,12 +6,12 @@ HyperPara:
   Adjust_lr: 0.0001
   Adjust_prefix: 'checkpoints/Adjust/'
 
-  batch_size_Decom: &batch_size_Decom 10
-  patch_size_Decom: &patch_size_Decom 256
-  batch_size_Restor: &batch_size_Restor 4
+  batch_size_Decom: &batch_size_Decom 20
+  patch_size_Decom: &patch_size_Decom 144
+  batch_size_Restor: &batch_size_Restor 6
   patch_size_Restor: &patch_size_Restor 386
-  batch_size_Adjust: &batch_size_Adjust 10
-  patch_size_Adjust: &patch_size_Adjust 256
+  batch_size_Adjust: &batch_size_Adjust 20
+  patch_size_Adjust: &patch_size_Adjust 144
 Dataset:
   train_input_path: '/media/haiya/tr_data2/fivek/input'
   train_lable_path: '/media/haiya/tr_data2/fivek/E'
@@ -19,7 +19,7 @@ Dataset:
   test_lable_path: '/media/haiya/tr_data2/fivek/E'
   filelist: 'filelist.json'
   num_parallel_calls: 6
-  buffer_size: 20
+  buffer_size: 100
   shuffle: 48
   batch_size_Decom: *batch_size_Decom
   patch_size_Decom: *patch_size_Decom
